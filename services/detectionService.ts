@@ -1,24 +1,13 @@
 import { ContentType, ScanResult } from '../types';
 
-// Helper to convert a File object to a Base64 string.
-// This is now used on the client-side to prepare data for the backend proxy.
-const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const result = reader.result as string;
-            // The result includes a data URI prefix (e.g., "data:image/jpeg;base64,"),
-            // which we need to remove.
-            const base64String = result.split(',')[1];
-            resolve(base64String);
-        };
-        reader.onerror = (error) => reject(error);
-    });
-};
+// The file-to-base64 conversion and resizing is now handled in App.tsx before calling this service.
+export const scanContent = async (
+    type: ContentType,
+    data: string | string[], // data is now always string (text or base64) or string[] (video frames)
+    fileName?: string,
+    mimeType?: string // mimeType is passed for images
+): Promise<ScanResult> => {
 
-export const scanContent = async (type: ContentType, data: File | string | string[], fileName?: string): Promise<ScanResult> => {
-    
     let payload: {
         type: ContentType;
         data: string | string[];
@@ -27,23 +16,21 @@ export const scanContent = async (type: ContentType, data: File | string | strin
     };
 
     try {
-        if (type === ContentType.IMAGE && data instanceof File) {
-            const base64Image = await fileToBase64(data);
+        if (type === ContentType.IMAGE && typeof data === 'string') {
             payload = {
                 type,
-                data: base64Image,
-                mimeType: data.type,
+                data, // This is now the pre-resized base64 string
+                mimeType,
                 fileName,
             };
         } else if (type === ContentType.TEXT && typeof data === 'string') {
             payload = { type, data, fileName };
         } else if (type === ContentType.VIDEO && Array.isArray(data)) {
-            // App.tsx has already converted the video to an array of base64 frames.
             payload = { type, data, fileName };
         } else {
              throw new Error("Invalid data format for the selected content type.");
         }
-    
+
         const response = await fetch('/api/scan', {
             method: 'POST',
             headers: {
@@ -52,18 +39,24 @@ export const scanContent = async (type: ContentType, data: File | string | strin
             body: JSON.stringify(payload),
         });
 
-        const result = await response.json();
-
         if (!response.ok) {
-            // Use the error message from the backend if available, otherwise a generic one.
-            throw new Error(result.error || `Request failed with status ${response.status}`);
+            const errorText = await response.text();
+            try {
+                // Try parsing it as JSON first, as our backend sends structured errors
+                const result = JSON.parse(errorText);
+                throw new Error(result.error || `Request failed with status ${response.status}`);
+            } catch (e) {
+                // If it's not JSON, it's likely a proxy error (like payload too large)
+                console.error("Non-JSON error response from server:", errorText);
+                throw new Error(`A server error occurred (status: ${response.status}). This can happen if the uploaded file is too large or corrupt. Please try a smaller file.`);
+            }
         }
 
+        const result = await response.json();
         return result as ScanResult;
 
     } catch (error: any) {
         console.error("Error communicating with the backend proxy:", error);
-        // Re-throw a user-friendly error to be displayed in the UI.
         throw new Error(error.message || "Failed to communicate with the analysis service. Please try again.");
     }
 };
