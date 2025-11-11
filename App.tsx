@@ -7,8 +7,11 @@ import ResultsDisplay from './components/ResultsDisplay';
 import Spinner from './components/Spinner';
 import { LOADING_MESSAGES } from './constants';
 
+const MAX_FRAME_DIMENSION = 512; // Define a max dimension for frames to control payload size
+
 /**
  * Extracts a specified number of frames from a video file or URL as base64-encoded JPEGs.
+ * Resizes frames to a max dimension to keep the payload size manageable.
  * @param videoSource The video file or URL string to process.
  * @param frameCount The number of frames to extract.
  * @returns A promise that resolves to an array of base64 strings.
@@ -20,8 +23,9 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
         const context = canvas.getContext('2d');
         const frames: string[] = [];
 
-        video.crossOrigin = 'anonymous'; // Attempt to load cross-origin videos for canvas processing
+        video.crossOrigin = 'anonymous';
         video.preload = 'metadata';
+        video.muted = true; // Mute to avoid issues with autoplay policies
 
         const sourceUrl = videoSource instanceof File ? URL.createObjectURL(videoSource) : videoSource;
         video.src = sourceUrl;
@@ -33,8 +37,28 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
         };
 
         video.onloadedmetadata = () => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            let targetWidth = video.videoWidth;
+            let targetHeight = video.videoHeight;
+
+            if (targetWidth === 0 || targetHeight === 0) {
+                cleanup();
+                reject(new Error("Video has invalid dimensions (0x0). It may be corrupt or unsupported."));
+                return;
+            }
+
+            // Resize logic to reduce payload size
+            if (targetWidth > MAX_FRAME_DIMENSION || targetHeight > MAX_FRAME_DIMENSION) {
+                if (targetWidth > targetHeight) {
+                    targetHeight = Math.round((targetHeight / targetWidth) * MAX_FRAME_DIMENSION);
+                    targetWidth = MAX_FRAME_DIMENSION;
+                } else {
+                    targetWidth = Math.round((targetWidth / targetHeight) * MAX_FRAME_DIMENSION);
+                    targetHeight = MAX_FRAME_DIMENSION;
+                }
+            }
+            
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
             const duration = video.duration;
             if (duration === 0 || !isFinite(duration)) {
                 cleanup();
@@ -57,8 +81,9 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
             video.onseeked = () => {
                 if (context) {
                     try {
-                        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-                        const base64 = canvas.toDataURL('image/jpeg').split(',')[1];
+                        context.drawImage(video, 0, 0, targetWidth, targetHeight);
+                        // Use JPEG with quality setting to further reduce size
+                        const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
                         frames.push(base64);
                     } catch (e) {
                         cleanup();
