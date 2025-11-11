@@ -1,8 +1,8 @@
 import { ContentType } from './types';
 
 export const MAX_TEXT_LENGTH = 10000;
-export const MAX_IMAGE_SIZE_MB = 10;
-export const MAX_VIDEO_SIZE_MB = 100;
+export const MAX_IMAGE_SIZE_MB = 5;
+export const MAX_VIDEO_SIZE_MB = 20;
 
 export const CONTENT_TYPE_CONFIG = {
   [ContentType.TEXT]: {

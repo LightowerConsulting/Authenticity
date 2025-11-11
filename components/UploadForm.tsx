@@ -25,7 +25,7 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
         if (files && files.length > 0) {
             const selectedFile = files[0];
             if (selectedFile.size > config.maxSize) {
-                setError(`File is too large. Max size for ${activeTab} is ${config.maxSize / (1024*1024)}MB.`);
+                setError(`File is too large. The maximum for ${activeTab} is ${config.maxSize / (1024*1024)}MB to ensure reliable analysis.`);
                 setFile(null);
                 return;
             }
