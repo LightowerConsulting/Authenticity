@@ -1,6 +1,5 @@
-
 import React, { useState, useCallback, useMemo } from 'react';
-import { ContentType, VideoInputType } from '../types';
+import { ContentType } from '../types';
 import { CONTENT_TYPE_CONFIG, MAX_TEXT_LENGTH } from '../constants';
 import { UploadIcon } from './Icon';
 
@@ -9,13 +8,15 @@ interface UploadFormProps {
     setError: (error: string | null) => void;
 }
 
+const TABS_TO_SHOW = [ContentType.TEXT, ContentType.IMAGE, ContentType.VIDEO];
+
 const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
     const [activeTab, setActiveTab] = useState<ContentType>(ContentType.TEXT);
     const [textInput, setTextInput] = useState<string>('');
     const [file, setFile] = useState<File | null>(null);
     const [isDragOver, setIsDragOver] = useState<boolean>(false);
-    const [videoInputType, setVideoInputType] = useState<VideoInputType>(VideoInputType.FILE);
-    const [urlInput, setUrlInput] = useState<string>('');
+    const [videoInputType, setVideoInputType] = useState<'file' | 'url'>('file');
+    const [videoUrl, setVideoUrl] = useState<string>('');
 
     const config = useMemo(() => CONTENT_TYPE_CONFIG[activeTab], [activeTab]);
 
@@ -43,31 +44,33 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
         }
     }, [setError]);
 
-    const handleUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        setError(null);
-        setUrlInput(e.target.value);
-    }, [setError]);
-
     const handleTabClick = (tab: ContentType) => {
         setActiveTab(tab);
         setFile(null);
         setTextInput('');
-        setUrlInput('');
-        setVideoInputType(VideoInputType.FILE);
+        setVideoUrl('');
+        setVideoInputType('file');
         setError(null);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         if (activeTab === ContentType.TEXT) {
             if (textInput.trim().length > 0) {
                 onScan(ContentType.TEXT, textInput);
             } else {
                 setError('Please enter some text to analyze.');
             }
-        } else if (activeTab === ContentType.VIDEO && videoInputType === VideoInputType.URL) {
-            if (urlInput.trim().length > 0) {
-                onScan(ContentType.VIDEO, urlInput);
+        } else if (activeTab === ContentType.VIDEO && videoInputType === 'url') {
+            if (videoUrl.trim().length > 0) {
+                try {
+                    // Basic URL validation
+                    new URL(videoUrl);
+                    onScan(ContentType.VIDEO, videoUrl);
+                } catch (_) {
+                    setError('Please enter a valid video URL.');
+                }
             } else {
                 setError('Please enter a video URL to analyze.');
             }
@@ -82,12 +85,9 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
     
     const isScanDisabled = useMemo(() => {
         if (activeTab === ContentType.TEXT) return textInput.trim().length === 0;
-        if (activeTab === ContentType.VIDEO) {
-            if (videoInputType === VideoInputType.URL) return urlInput.trim().length === 0;
-            return !file;
-        }
+        if (activeTab === ContentType.VIDEO && videoInputType === 'url') return videoUrl.trim().length === 0;
         return !file;
-    }, [activeTab, textInput, file, videoInputType, urlInput]);
+    }, [activeTab, textInput, file, videoInputType, videoUrl]);
 
     const dragEvents = {
         onDragEnter: (e: React.DragEvent<HTMLLabelElement>) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); },
@@ -103,8 +103,8 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
         },
     };
 
-    const fileDropzone = (
-        <div className="mt-1 flex justify-center">
+    const renderFileUpload = () => (
+         <div className="mt-1 flex justify-center">
              <label
                 {...dragEvents}
                 htmlFor="file-upload"
@@ -134,7 +134,7 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
             <div className="mb-6">
                 <div className="border-b border-slate-700">
                     <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                        {(Object.values(ContentType)).map((tab) => (
+                        {TABS_TO_SHOW.map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => handleTabClick(tab)}
@@ -159,6 +159,7 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
                             onChange={handleTextChange}
                             placeholder="Paste your text here to check for AI generation..."
                             className="w-full h-48 p-4 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                            aria-label="Text input for AI detection"
                         />
                         <div className="text-right text-sm text-slate-500 mt-1">
                             {textInput.length} / {MAX_TEXT_LENGTH}
@@ -166,29 +167,48 @@ const UploadForm: React.FC<UploadFormProps> = ({ onScan, setError }) => {
                     </div>
                 )}
 
-                {activeTab === ContentType.IMAGE && fileDropzone}
-
+                {activeTab === ContentType.IMAGE && renderFileUpload()}
+                
                 {activeTab === ContentType.VIDEO && (
                     <div>
                         <div className="flex justify-center mb-4">
-                            <div className="bg-slate-900 p-1 rounded-lg flex items-center space-x-1">
-                                <button type="button" onClick={() => setVideoInputType(VideoInputType.FILE)} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${videoInputType === VideoInputType.FILE ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>Upload File</button>
-                                <button type="button" onClick={() => setVideoInputType(VideoInputType.URL)} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${videoInputType === VideoInputType.URL ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>Paste URL</button>
+                            <div className="inline-flex rounded-md shadow-sm bg-slate-800 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setVideoInputType('file')}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors duration-200 rounded-md ${videoInputType === 'file' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                >
+                                    Upload File
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setVideoInputType('url')}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors duration-200 rounded-md ${videoInputType === 'url' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                                >
+                                    Paste URL
+                                </button>
                             </div>
                         </div>
-                        {videoInputType === VideoInputType.FILE ? fileDropzone : (
-                            <div className="mt-1">
+
+                        {videoInputType === 'file' ? renderFileUpload() : (
+                            <div>
                                 <input
                                     type="url"
-                                    value={urlInput}
-                                    onChange={handleUrlChange}
-                                    placeholder="Paste a video link from YouTube, X, TikTok, etc."
-                                    className="w-full h-48 p-4 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-center"
+                                    value={videoUrl}
+                                    onChange={(e) => setVideoUrl(e.target.value)}
+                                    placeholder="https://example.com/video.mp4"
+                                    className="w-full p-4 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-center h-auto"
+                                    aria-label="Video URL input"
                                 />
-                            </div>
+                                <div className="mt-2 text-center text-xs text-slate-400 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                                    <p><strong className="font-semibold text-yellow-400">Important:</strong> Please use a <strong className="text-slate-200">direct link to a video file</strong> (e.g., one ending in .mp4).</p>
+                                    <p className="mt-1">Links from sites like YouTube, TikTok, X, etc., will not work due to browser security policies. For those videos, please download them first and use the "Upload File" tab.</p>
+                                </div>
+                             </div>
                         )}
                     </div>
                 )}
+
 
                 <div className="mt-8 text-center">
                     <button

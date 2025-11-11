@@ -9,9 +9,6 @@ const Header: React.FC = () => {
                     by <a href="https://lightowerconsulting.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300 transition-colors duration-200">Lightower Consulting</a>
                 </p>
             </div>
-            <button className="hidden sm:inline-block bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200">
-                Sign In
-            </button>
         </header>
     );
 };
