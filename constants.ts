@@ -1,4 +1,3 @@
-
 import { ContentType } from './types';
 
 export const MAX_TEXT_LENGTH = 10000;
@@ -24,12 +23,12 @@ export const CONTENT_TYPE_CONFIG = {
 };
 
 export const LOADING_MESSAGES = [
-  "Initializing detection engines...",
+  "Initializing analysis engine...",
   "Analyzing content structure...",
-  "For video, this may take several minutes...",
-  "Cross-referencing with AI models...",
+  "Running content through Gemini model...",
+  "Cross-referencing with known patterns...",
   "Extracting digital artifacts...",
-  "Compiling multi-source report...",
+  "Compiling analysis report...",
   "Finalizing authenticity score...",
-  "Still working... Large files can take longer.",
+  "This can take a moment for large files...",
 ];

@@ -1,13 +1,7 @@
-
 export enum ContentType {
   TEXT = 'Text',
   IMAGE = 'Image',
   VIDEO = 'Video',
-}
-
-export enum VideoInputType {
-  FILE = 'File',
-  URL = 'URL',
 }
 
 export interface ApiDetail {
