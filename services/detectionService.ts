@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { ContentType, ScanResult, ApiDetail } from '../types';
 
-// Initialize the client with the API key injected via Vite's define config
+// Initialize the client. We will check for the key availability inside the function 
+// to provide a better error message if it's missing.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MANUAL_TIPS = {
@@ -25,6 +26,8 @@ const MANUAL_TIPS = {
     ]
 };
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const scanContent = async (
     type: ContentType,
     data: string | string[], // data is always string (text or base64) or string[] (video frames)
@@ -32,11 +35,16 @@ export const scanContent = async (
     mimeType?: string // mimeType is passed for images
 ): Promise<ScanResult> => {
 
+    // 1. Validate API Key exists before making a request
+    if (!process.env.API_KEY) {
+        throw new Error("System Error: API_KEY is missing. Please configure the environment variable in your project settings.");
+    }
+
     try {
         let contents: any;
         let systemInstruction = "";
 
-        // Define the schema for the structured output using the SDK's Type enum
+        // Define the schema for the structured output
         const responseSchema: Schema = {
             type: Type.OBJECT,
             properties: {
@@ -78,23 +86,42 @@ export const scanContent = async (
              throw new Error("Invalid data format for the selected content type.");
         }
 
-        // Execute the request using the correct Gemini 2.5 Flash model
-        // Note: For complex reasoning, we rely on 2.5 Flash's speed and multimodal capabilities.
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents,
-            config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema,
-                temperature: 0.4, // Lower temperature for more analytical/consistent results
-            },
-        });
+        // 2. Implement Retry Logic for handling 500/503 errors
+        let response;
+        let lastError;
+        const maxRetries = 3;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: 'gemini-3-pro-preview',
+                    contents,
+                    config: {
+                        systemInstruction,
+                        // Removed responseMimeType to avoid conflicts with responseSchema in some regions/models
+                        responseSchema,
+                        temperature: 0.4, 
+                    },
+                });
+                break; // Success, exit loop
+            } catch (err: any) {
+                lastError = err;
+                console.warn(`Attempt ${attempt} failed:`, err.message);
+                if (attempt < maxRetries) {
+                    // Exponential backoff: 1s, 2s, 4s...
+                    await wait(1000 * Math.pow(2, attempt - 1));
+                }
+            }
+        }
+
+        if (!response) {
+            throw lastError || new Error("Failed to connect to the AI service after multiple attempts.");
+        }
 
         const jsonText = response.text?.trim();
 
         if (!jsonText) {
-            throw new Error('The AI model returned an empty response. This may be due to content safety filters.');
+            throw new Error('The AI model returned an empty response. This usually indicates the content triggered safety filters.');
         }
 
         let result;
@@ -102,11 +129,11 @@ export const scanContent = async (
             result = JSON.parse(jsonText);
         } catch (e) {
             console.error("Failed to parse JSON from Gemini:", jsonText);
-            throw new Error(`Failed to parse analysis results.`);
+            throw new Error(`Failed to parse analysis results. The model output was not valid JSON.`);
         }
 
         const analysis: ApiDetail[] = [{
-            provider: 'Gemini AI',
+            provider: 'Gemini 3.0',
             score: Number(result.aiScore),
             details: [result.reasoning, ...result.evidence]
         }];
@@ -123,6 +150,10 @@ export const scanContent = async (
 
     } catch (error: any) {
         console.error("Error in detection service:", error);
+        // Provide a more user-friendly error message
+        if (error.message.includes('500') || error.message.includes('503')) {
+             throw new Error("The analysis server is currently experiencing high traffic. Please wait a moment and try again.");
+        }
         throw new Error(error.message || "Failed to communicate with the analysis service. Please try again.");
     }
 };
