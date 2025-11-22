@@ -8,16 +8,11 @@ import Spinner from './components/Spinner';
 import { LOADING_MESSAGES } from './constants';
 
 const MAX_FRAME_DIMENSION = 512;
-const IMAGE_QUALITY = 0.85; // Define quality for resized images
-const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024; // 4MB safe limit for serverless function
+const IMAGE_QUALITY = 0.8; // Slightly reduced quality to allow for more frames
+const MAX_PAYLOAD_SIZE = 4 * 1024 * 1024; // 4MB safe limit
 
 /**
  * Resizes an image file to a max dimension and returns a base64 string.
- * This is crucial to keep the request payload within serverless function limits.
- * @param file The image file to resize.
- * @param maxDimension The maximum width or height of the resized image.
- * @param quality The quality of the output JPEG image (0 to 1).
- * @returns A promise resolving to an object with the base64 string and its mimeType.
  */
 const resizeImage = (file: File, maxDimension: number, quality: number): Promise<{ base64: string; mimeType: string }> => {
     return new Promise((resolve, reject) => {
@@ -66,11 +61,7 @@ const resizeImage = (file: File, maxDimension: number, quality: number): Promise
 
 
 /**
- * Extracts a specified number of frames from a video file or URL as base64-encoded JPEGs.
- * Resizes frames to a max dimension to keep the payload size manageable.
- * @param videoSource The video file or URL string to process.
- * @param frameCount The number of frames to extract.
- * @returns A promise that resolves to an array of base64 strings.
+ * Extracts frames from a video file or URL.
  */
 const extractFramesFromVideo = (videoSource: File | string, frameCount: number): Promise<string[]> => {
     return new Promise((resolve, reject) => {
@@ -81,7 +72,7 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
 
         video.crossOrigin = 'anonymous';
         video.preload = 'metadata';
-        video.muted = true; // Mute to avoid issues with autoplay policies
+        video.muted = true;
 
         const sourceUrl = videoSource instanceof File ? URL.createObjectURL(videoSource) : videoSource;
         video.src = sourceUrl;
@@ -102,7 +93,7 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
                 return;
             }
 
-            // Resize logic to reduce payload size
+            // Resize logic
             if (targetWidth > MAX_FRAME_DIMENSION || targetHeight > MAX_FRAME_DIMENSION) {
                 if (targetWidth > targetHeight) {
                     targetHeight = Math.round((targetHeight / targetWidth) * MAX_FRAME_DIMENSION);
@@ -122,11 +113,12 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
                 return;
             }
 
+            // Extract 5 frames spread across the video
             const step = duration / (frameCount + 1);
             let currentTime = step;
 
             const captureFrame = () => {
-                if (frames.length >= frameCount || currentTime > duration) {
+                if (frames.length >= frameCount || currentTime >= duration) {
                     cleanup();
                     resolve(frames);
                     return;
@@ -138,8 +130,8 @@ const extractFramesFromVideo = (videoSource: File | string, frameCount: number):
                 if (context) {
                     try {
                         context.drawImage(video, 0, 0, targetWidth, targetHeight);
-                        // Use JPEG with quality setting to further reduce size
-                        const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                        // Use slightly lower quality (0.7) for video frames to allow more frames in payload
+                        const base64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
                         frames.push(base64);
                     } catch (e) {
                         cleanup();
@@ -206,15 +198,16 @@ const App: React.FC = () => {
 
             } else if (type === ContentType.VIDEO) {
                 setLoadingMessage("Extracting frames from video...");
-                const frames = await extractFramesFromVideo(data as File | string, 3);
+                // INCREASED FRAME COUNT TO 5 for better temporal analysis
+                const frames = await extractFramesFromVideo(data as File | string, 5);
                 if (frames.length === 0) {
                     throw new Error("Could not extract frames from the video. It might be too short or unsupported.");
                 }
                 
-                // Pre-flight check to ensure the payload won't exceed serverless function limits
+                // Pre-flight check
                 const estimatedPayloadSize = JSON.stringify(frames).length;
                 if (estimatedPayloadSize > MAX_PAYLOAD_SIZE) {
-                    throw new Error("The processed video data is too large for analysis, even after compression. Please try a shorter or smaller video file.");
+                    throw new Error("The processed video data is too large. Please try a shorter video file.");
                 }
 
                 const result = await scanContent(ContentType.VIDEO, frames, fileName);
