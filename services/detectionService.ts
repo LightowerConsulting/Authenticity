@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ContentType, ScanResult, ApiDetail } from '../types';
 
+// Initialize the client with the API key injected via Vite's define config
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MANUAL_TIPS = {
@@ -24,7 +25,6 @@ const MANUAL_TIPS = {
     ]
 };
 
-// The file-to-base64 conversion and resizing is handled in App.tsx before calling this service.
 export const scanContent = async (
     type: ContentType,
     data: string | string[], // data is always string (text or base64) or string[] (video frames)
@@ -36,7 +36,7 @@ export const scanContent = async (
         let contents: any;
         let systemInstruction = "";
 
-        // Define the schema for the structured output
+        // Define the schema for the structured output using the SDK's Type enum
         const responseSchema = {
             type: Type.OBJECT,
             properties: {
@@ -78,6 +78,7 @@ export const scanContent = async (
              throw new Error("Invalid data format for the selected content type.");
         }
 
+        // Execute the request using the correct Gemini 2.5 Flash model
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents,
