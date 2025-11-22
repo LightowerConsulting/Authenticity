@@ -1,9 +1,24 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { ContentType, ScanResult, ApiDetail } from '../types';
 
-// Initialize the client. We will check for the key availability inside the function 
-// to provide a better error message if it's missing.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Declare the global constant injected by Vite
+declare const __GEMINI_API_KEY__: string;
+
+// Safely retrieve the API key.
+const getApiKey = (): string => {
+    try {
+        if (typeof __GEMINI_API_KEY__ !== 'undefined') {
+            return __GEMINI_API_KEY__;
+        }
+    } catch (e) {
+        // Ignore error
+    }
+    return '';
+};
+
+const apiKey = getApiKey();
+// Initialize AI only if key exists. We validate it strictly inside scanContent.
+const ai = new GoogleGenAI({ apiKey: apiKey || 'dummy-key' });
 
 const MANUAL_TIPS = {
     [ContentType.TEXT]: [
@@ -36,16 +51,16 @@ export const scanContent = async (
 ): Promise<ScanResult> => {
 
     // 1. Validate API Key exists before making a request
-    if (!process.env.API_KEY) {
-        throw new Error("System Error: API_KEY is missing. Please configure the environment variable in your project settings.");
+    if (!apiKey || apiKey === 'dummy-key') {
+        throw new Error("System Error: API Key is missing. Please ensure the 'GEMINI_API_KEY' environment variable is set in your Vercel Project Settings.");
     }
 
     try {
         let contents: any;
         let systemInstruction = "";
 
-        // Define the schema for the structured output
-        const responseSchema: Schema = {
+        // Define the schema structure implicitly to avoid import errors
+        const responseSchema = {
             type: Type.OBJECT,
             properties: {
                 aiScore: { type: Type.NUMBER, description: "A score from 0 (definitely human) to 100 (definitely AI)." },
@@ -98,7 +113,6 @@ export const scanContent = async (
                     contents,
                     config: {
                         systemInstruction,
-                        // Removed responseMimeType to avoid conflicts with responseSchema in some regions/models
                         responseSchema,
                         temperature: 0.4, 
                     },
@@ -107,10 +121,15 @@ export const scanContent = async (
             } catch (err: any) {
                 lastError = err;
                 console.warn(`Attempt ${attempt} failed:`, err.message);
-                if (attempt < maxRetries) {
-                    // Exponential backoff: 1s, 2s, 4s...
-                    await wait(1000 * Math.pow(2, attempt - 1));
+                // Check for common overloaded errors
+                if (err.message?.includes('503') || err.message?.includes('500') || err.message?.includes('Overloaded')) {
+                    if (attempt < maxRetries) {
+                        // Exponential backoff: 1s, 2s, 4s...
+                        await wait(1000 * Math.pow(2, attempt - 1));
+                        continue;
+                    }
                 }
+                throw err; // Throw immediately if it's not a server error (e.g. 400 Bad Request)
             }
         }
 
@@ -118,10 +137,15 @@ export const scanContent = async (
             throw lastError || new Error("Failed to connect to the AI service after multiple attempts.");
         }
 
-        const jsonText = response.text?.trim();
+        let jsonText = response.text?.trim();
 
         if (!jsonText) {
             throw new Error('The AI model returned an empty response. This usually indicates the content triggered safety filters.');
+        }
+
+        // Remove markdown code blocks if present (```json ... ```)
+        if (jsonText.startsWith('```')) {
+            jsonText = jsonText.replace(/^```(json)?/, '').replace(/```$/, '').trim();
         }
 
         let result;
@@ -150,9 +174,12 @@ export const scanContent = async (
 
     } catch (error: any) {
         console.error("Error in detection service:", error);
-        // Provide a more user-friendly error message
-        if (error.message.includes('500') || error.message.includes('503')) {
-             throw new Error("The analysis server is currently experiencing high traffic. Please wait a moment and try again.");
+        // Provide a more user-friendly error message for specific codes
+        if (error.message.includes('503') || error.message.includes('Overloaded')) {
+             throw new Error("The AI analysis server is currently experiencing high traffic. Please wait a few seconds and try again.");
+        }
+        if (error.message.includes('400')) {
+            throw new Error("The content was rejected by the AI model. It might be too large or contain prohibited content.");
         }
         throw new Error(error.message || "Failed to communicate with the analysis service. Please try again.");
     }

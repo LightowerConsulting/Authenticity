@@ -4,19 +4,20 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  // Use '.' instead of process.cwd() to avoid potential path issues.
   const env = loadEnv(mode, '.', '');
   
-  // Vercel injects environment variables into process.env, but loadEnv loads from .env files.
-  // We need to check both.
-  const apiKey = env.API_KEY || process.env.API_KEY || '';
+  // Priority: Vercel System Env (GEMINI_API_KEY) > .env file (GEMINI_API_KEY) > Fallbacks
+  // We default to '' to ensure JSON.stringify never receives undefined.
+  const rawApiKey = process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || process.env.API_KEY || env.API_KEY || '';
 
   return {
     plugins: [react()],
     define: {
-      // This is critical: it replaces `process.env.API_KEY` in the client code 
-      // with the actual value from your environment variables during the build.
-      'process.env.API_KEY': JSON.stringify(apiKey),
+      // Define a global constant for the API Key.
+      // This bypasses 'import.meta.env' issues entirely by replacing the variable at compile time.
+      // We explicitly stringify it here.
+      __GEMINI_API_KEY__: JSON.stringify(rawApiKey),
     },
   };
 });
