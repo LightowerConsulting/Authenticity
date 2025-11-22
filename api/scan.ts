@@ -86,8 +86,20 @@ export default async function handler(req, res) {
             },
         });
 
-        const jsonText = response.text.trim();
-        const result = JSON.parse(jsonText);
+        const jsonText = response.text?.trim() ?? '';
+        
+        if (!jsonText) {
+            return res.status(500).json({ error: 'The AI model returned an empty response. This may be due to content safety filters or a temporary issue. Please try different content.' });
+        }
+
+        let result;
+        try {
+            result = JSON.parse(jsonText);
+        } catch (e) {
+            console.error("Failed to parse JSON from Gemini:", jsonText);
+            return res.status(500).json({ error: "The AI model returned an invalid response. Please try again." });
+        }
+
 
         const analysis: ApiDetail[] = [{
             provider: 'Gemini AI',

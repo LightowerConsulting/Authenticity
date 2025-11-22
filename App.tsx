@@ -206,7 +206,7 @@ const App: React.FC = () => {
 
             } else if (type === ContentType.VIDEO) {
                 setLoadingMessage("Extracting frames from video...");
-                const frames = await extractFramesFromVideo(data as File | string, 5);
+                const frames = await extractFramesFromVideo(data as File | string, 3);
                 if (frames.length === 0) {
                     throw new Error("Could not extract frames from the video. It might be too short or unsupported.");
                 }
